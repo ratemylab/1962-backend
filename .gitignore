@@ -19,7 +19,6 @@ build/
 
 # Secrets / local env
 .env
-.env.docker
 .env.local
 
 # IDE
