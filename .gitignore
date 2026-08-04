@@ -23,7 +23,6 @@ build/
 .env.local
 
 # IDE
-.cursor/
 .idea/
 .vscode/
 
