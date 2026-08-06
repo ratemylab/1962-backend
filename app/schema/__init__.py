@@ -2,6 +2,13 @@
 
 from app.schema.animal import AnimalBase, AnimalRead
 from app.schema.audio import AudioFileBase, AudioFileRead
+from app.schema.auth import (
+    AdminLoginRequest,
+    AdminLoginResponse,
+    LogoutResponse,
+    RefreshTokenRequest,
+    RefreshTokenResponse,
+)
 from app.schema.base import AppSchema, ClientIdString, NonEmptyString, TimestampedSchema
 from app.schema.client import (
     ClientBase,
@@ -9,6 +16,7 @@ from app.schema.client import (
     ClientCreateRequest,
     ClientCreateResponse,
     ClientRead,
+    ClientTokenRotationRequest,
     ClientTokenRotationResponse,
     ClientUpdate,
 )
@@ -20,6 +28,8 @@ from app.schema.ticket import (
 )
 
 __all__ = [
+    "AdminLoginRequest",
+    "AdminLoginResponse",
     "AnimalBase",
     "AnimalRead",
     "AppSchema",
@@ -31,9 +41,13 @@ __all__ = [
     "ClientCreateResponse",
     "ClientIdString",
     "ClientRead",
+    "ClientTokenRotationRequest",
     "ClientTokenRotationResponse",
     "ClientUpdate",
+    "LogoutResponse",
     "NonEmptyString",
+    "RefreshTokenRequest",
+    "RefreshTokenResponse",
     "TimestampedSchema",
     "TicketCreateRequest",
     "TicketCreateResponse",

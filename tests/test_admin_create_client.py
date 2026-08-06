@@ -8,10 +8,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 
-from app.core.security import verify_token
-from app.db.models import ClientDB
+from app.core.security import create_access_token, hash_password, verify_token
+from app.db.models import AdminDB, ClientDB
 from app.db.session import get_db
 from app.main import app
+
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "Admin@123"
 
 
 class _ScalarResult:
@@ -25,6 +28,7 @@ class _ScalarResult:
 class _FakeSession:
     def __init__(self) -> None:
         self.clients_by_client_id: dict[str, ClientDB] = {}
+        self.admins_by_username: dict[str, AdminDB] = {}
         self._pending: list[object] = []
         self.commits = 0
         self.rollbacks = 0
@@ -36,6 +40,8 @@ class _FakeSession:
         value = next(iter(params.values()), None)
         if entity is ClientDB:
             return _ScalarResult(self.clients_by_client_id.get(value))
+        if entity is AdminDB:
+            return _ScalarResult(self.admins_by_username.get(value))
         return _ScalarResult(None)
 
     def add(self, obj: object) -> None:
@@ -62,7 +68,14 @@ class _FakeSession:
 
 @pytest.fixture
 def fake_db() -> _FakeSession:
-    return _FakeSession()
+    db = _FakeSession()
+    db.admins_by_username[ADMIN_USERNAME] = AdminDB(
+        id="admin-internal-id",
+        username=ADMIN_USERNAME,
+        password_hash=hash_password(ADMIN_PASSWORD),
+        is_active=True,
+    )
+    return db
 
 
 @pytest.fixture
@@ -80,8 +93,15 @@ def _payload(client_id: str = "client_up_001") -> dict[str, Any]:
     return {"clientId": client_id, "clientName": "Field App - Uttar Pradesh"}
 
 
+def _auth_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    headers = {"Authorization": f"Bearer {create_access_token(ADMIN_USERNAME)}"}
+    if extra:
+        headers.update(extra)
+    return headers
+
+
 def test_create_client_success_returns_201(client: TestClient, fake_db: _FakeSession) -> None:
-    response = client.post("/api/v1/admin/clients", json=_payload())
+    response = client.post("/api/v1/admin/clients", json=_payload(), headers=_auth_headers())
 
     assert response.status_code == 201
     body = response.json()
@@ -92,7 +112,7 @@ def test_create_client_success_returns_201(client: TestClient, fake_db: _FakeSes
 
 
 def test_create_client_returns_api_token_in_response(client: TestClient) -> None:
-    response = client.post("/api/v1/admin/clients", json=_payload())
+    response = client.post("/api/v1/admin/clients", json=_payload(), headers=_auth_headers())
 
     assert response.status_code == 201
     token = response.json()["apiToken"]
@@ -105,7 +125,7 @@ def test_create_client_stores_hashed_token_not_plaintext(
     client: TestClient,
     fake_db: _FakeSession,
 ) -> None:
-    response = client.post("/api/v1/admin/clients", json=_payload())
+    response = client.post("/api/v1/admin/clients", json=_payload(), headers=_auth_headers())
 
     assert response.status_code == 201
     plaintext_token = response.json()["apiToken"]
@@ -130,7 +150,7 @@ def test_create_client_duplicate_client_id_returns_409(
         is_active=True,
     )
 
-    response = client.post("/api/v1/admin/clients", json=_payload())
+    response = client.post("/api/v1/admin/clients", json=_payload(), headers=_auth_headers())
 
     assert response.status_code == 409
     # No second row is written for the rejected duplicate.
@@ -145,20 +165,28 @@ def test_create_client_duplicate_via_db_integrity_returns_409(
     # constraint rejects the insert; the CRUD layer maps it to 409.
     fake_db.commit_error = IntegrityError("INSERT", {}, Exception("duplicate client_id"))
 
-    response = client.post("/api/v1/admin/clients", json=_payload())
+    response = client.post("/api/v1/admin/clients", json=_payload(), headers=_auth_headers())
 
     assert response.status_code == 409
     assert fake_db.rollbacks == 1
 
 
 def test_create_client_missing_client_id_returns_400(client: TestClient) -> None:
-    response = client.post("/api/v1/admin/clients", json={"clientName": "No Id"})
+    response = client.post(
+        "/api/v1/admin/clients",
+        json={"clientName": "No Id"},
+        headers=_auth_headers(),
+    )
 
     assert response.status_code == 400
 
 
 def test_create_client_missing_client_name_returns_400(client: TestClient) -> None:
-    response = client.post("/api/v1/admin/clients", json={"clientId": "client_up_002"})
+    response = client.post(
+        "/api/v1/admin/clients",
+        json={"clientId": "client_up_002"},
+        headers=_auth_headers(),
+    )
 
     assert response.status_code == 400
 
@@ -167,9 +195,49 @@ def test_create_client_blank_client_id_returns_422(client: TestClient) -> None:
     response = client.post(
         "/api/v1/admin/clients",
         json={"clientId": "", "clientName": "Field App"},
+        headers=_auth_headers(),
     )
 
     assert response.status_code == 422
+
+
+def test_create_client_without_token_returns_401(
+    client: TestClient,
+    fake_db: _FakeSession,
+) -> None:
+    response = client.post("/api/v1/admin/clients", json=_payload())
+
+    assert response.status_code == 401
+    assert "client_up_001" not in fake_db.clients_by_client_id
+
+
+def test_create_client_with_invalid_token_returns_401(
+    client: TestClient,
+    fake_db: _FakeSession,
+) -> None:
+    response = client.post(
+        "/api/v1/admin/clients",
+        json=_payload(),
+        headers={"Authorization": "Bearer not-a-jwt"},
+    )
+
+    assert response.status_code == 401
+    assert "client_up_001" not in fake_db.clients_by_client_id
+
+
+def test_create_client_rejects_client_api_key_headers(
+    client: TestClient,
+    fake_db: _FakeSession,
+) -> None:
+    # Client API-key credentials must not grant access to admin endpoints.
+    response = client.post(
+        "/api/v1/admin/clients",
+        json=_payload(),
+        headers={"X-Client-Id": "client_rj_001", "X-Api-Token": "valid-token"},
+    )
+
+    assert response.status_code == 401
+    assert "client_up_001" not in fake_db.clients_by_client_id
 
 
 def test_create_client_echoes_x_request_id(client: TestClient) -> None:
@@ -177,7 +245,7 @@ def test_create_client_echoes_x_request_id(client: TestClient) -> None:
     response = client.post(
         "/api/v1/admin/clients",
         json=_payload(),
-        headers={"X-Request-Id": request_id},
+        headers=_auth_headers({"X-Request-Id": request_id}),
     )
 
     assert response.status_code == 201
@@ -189,8 +257,10 @@ def test_openapi_documents_admin_create_client(client: TestClient) -> None:
     operation = schema["paths"]["/api/v1/admin/clients"]["post"]
 
     assert "201" in operation["responses"]
-    for code in ("409", "422", "500"):
+    for code in ("401", "409", "422", "500"):
         assert code in operation["responses"]
+
+    assert operation["security"] == [{"AdminBearerAuth": []}]
 
     request_ref = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
     request_name = request_ref.split("/")[-1]

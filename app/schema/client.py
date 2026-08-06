@@ -54,6 +54,18 @@ TOKEN_ROTATION_MESSAGE = (
 )
 
 
+class ClientTokenRotationRequest(BaseModel):
+    """Identifies the client whose token an authenticated admin is rotating."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        extra="forbid",
+        json_schema_extra={"example": {"clientId": "client_rj_001"}},
+    )
+
+    client_id: str = Field(..., alias="clientId", min_length=1, max_length=100)
+
+
 class ClientTokenRotationResponse(BaseModel):
     """Rotation result. Exposes the plaintext token once and never the stored hash."""
 

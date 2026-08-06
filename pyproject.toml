@@ -16,6 +16,11 @@ asyncpg = "^0.31.0"
 alembic = "^1.18.5"
 psycopg = {extras = ["binary"], version = "^3.3.4"}
 python-multipart = "^0.0.32"
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+pyjwt = "^2.13.0"
+# passlib 1.7.4 reads bcrypt.__about__, which bcrypt removed in 4.1, breaking
+# backend detection. Keep this pin until passlib ships a compatible release.
+bcrypt = ">=4.0.1,<4.1"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
@@ -24,7 +29,8 @@ build-backend = "poetry.core.masonry.api"
 [dependency-groups]
 dev = [
     "pytest (>=9.1.1,<10.0.0)",
-    "httpx (>=0.28.1,<0.29.0)"
+    "httpx (>=0.28.1,<0.29.0)",
+    "pytest-cov (>=7.1.0,<8.0.0)"
 ]
 
 [tool.pytest.ini_options]

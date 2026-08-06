@@ -2,12 +2,30 @@ from __future__ import annotations
 
 import asyncio
 
-from app.db.seed import seed_clients
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.db.seed import seed_admin, seed_clients
 from app.db.session import AsyncSessionFactory
+
+
+async def _seed_default_admin(session: AsyncSession) -> None:
+    admin = await seed_admin(session)
+    if admin is None:
+        print(f"Admin {settings.seed_admin_username!r} already exists; not modified.")
+        return
+
+    # The password is intentionally not printed; only its bcrypt hash is stored.
+    print(
+        f"Default admin {admin.username!r} created with the configured "
+        "SEED_ADMIN_PASSWORD. Change it before exposing this deployment."
+    )
 
 
 async def main() -> None:
     async with AsyncSessionFactory() as session:
+        if settings.seed_admin_enabled:
+            await _seed_default_admin(session)
         credentials = await seed_clients(session)
 
     if not credentials:

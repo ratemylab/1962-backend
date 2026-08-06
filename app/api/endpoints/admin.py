@@ -5,16 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import (
-    INVALID_CREDENTIALS_DESCRIPTION,
-    MALFORMED_AUTH_HEADERS_DESCRIPTION,
-    get_current_client,
-)
-from app.db.models import ClientDB
+from app.api.deps import INVALID_ADMIN_TOKEN_DESCRIPTION, get_current_admin
+from app.db.models import AdminDB
 from app.db.session import get_db
 from app.schema.client import (
     ClientCreateRequest,
     ClientCreateResponse,
+    ClientTokenRotationRequest,
     ClientTokenRotationResponse,
 )
 from app.services.admin_service import AdminService, get_admin_service
@@ -24,21 +21,25 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 CREATE_CLIENT_ERROR_RESPONSES = {
+    401: {"description": INVALID_ADMIN_TOKEN_DESCRIPTION},
     409: {"description": "A client with the supplied clientId already exists."},
     422: {"description": "Field validation failed."},
     500: {"description": "Unexpected server-side error."},
 }
 
 ROTATE_TOKEN_ERROR_RESPONSES = {
-    400: {"description": f"Request contains {MALFORMED_AUTH_HEADERS_DESCRIPTION}."},
-    401: {"description": INVALID_CREDENTIALS_DESCRIPTION},
+    400: {"description": "Malformed JSON or missing mandatory field."},
+    401: {"description": INVALID_ADMIN_TOKEN_DESCRIPTION},
+    404: {"description": "clientId does not match any existing client."},
+    422: {"description": "Field validation failed."},
     500: {"description": "Unexpected server-side error."},
 }
 
 ROTATE_TOKEN_DESCRIPTION = (
-    "Rotates the authenticated client's API token. The existing token becomes "
-    "invalid immediately after successful rotation. The newly generated token is "
-    "returned only once and must be stored securely by the client."
+    "Rotates the API token of the client identified by clientId. The existing "
+    "token becomes invalid immediately after successful rotation. The newly "
+    "generated token is returned only once and must be stored securely by the "
+    "client. Requires an admin Bearer token."
 )
 
 
@@ -51,6 +52,7 @@ ROTATE_TOKEN_DESCRIPTION = (
 )
 async def create_client(
     body: ClientCreateRequest,
+    current_admin: Annotated[AdminDB, Depends(get_current_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     x_request_id: Annotated[str | None, Header(alias="X-Request-Id")] = None,
     admin_service: AdminService = Depends(get_admin_service),
@@ -67,9 +69,10 @@ async def create_client(
     responses=ROTATE_TOKEN_ERROR_RESPONSES,
 )
 async def rotate_token(
-    current_client: Annotated[ClientDB, Depends(get_current_client)],
+    body: ClientTokenRotationRequest,
+    current_admin: Annotated[AdminDB, Depends(get_current_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     x_request_id: Annotated[str | None, Header(alias="X-Request-Id")] = None,
     admin_service: AdminService = Depends(get_admin_service),
 ) -> ClientTokenRotationResponse:
-    return await admin_service.rotate_token(db, current_client=current_client)
+    return await admin_service.rotate_token(db, request=body)

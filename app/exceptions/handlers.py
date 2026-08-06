@@ -17,7 +17,9 @@ async def application_exception_handler(request: Request, exc: ApplicationExcept
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     detail = exc.detail if isinstance(exc.detail, (str, dict, list)) else str(exc.detail)
     payload = {"message": detail}
-    return JSONResponse(status_code=exc.status_code, content=payload)
+    # Forwarded so challenges such as WWW-Authenticate survive; exceptions
+    # without headers keep their existing response untouched.
+    return JSONResponse(status_code=exc.status_code, content=payload, headers=exc.headers)
 
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:

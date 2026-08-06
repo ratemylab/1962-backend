@@ -11,8 +11,9 @@ PUBLIC_PATHS = {"/health", "/docs", "/openapi.json"}
 class AuthMiddleware(BaseHTTPMiddleware):
     """Lightweight request context middleware.
 
-    Static client-token authentication is enforced by the get_current_client
-    dependency, not globally at middleware level, so docs and health stay public.
+    Authentication is enforced per endpoint by the get_current_client (static
+    client token) and get_current_admin (admin JWT) dependencies rather than
+    globally at middleware level, so docs, health and login stay public.
     """
 
     async def dispatch(

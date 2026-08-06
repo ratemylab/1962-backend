@@ -4,12 +4,12 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import generate_token, hash_token
-from app.db.models import ClientDB
 from app.db.services.crud_client import DuplicateClientError, client_crud
 from app.exceptions.base import ApplicationException
 from app.schema.client import (
     ClientCreateRequest,
     ClientCreateResponse,
+    ClientTokenRotationRequest,
     ClientTokenRotationResponse,
 )
 
@@ -50,12 +50,24 @@ class AdminService:
         self,
         db: AsyncSession,
         *,
-        current_client: ClientDB,
+        request: ClientTokenRotationRequest,
     ) -> ClientTokenRotationResponse:
+        """Rotate the API token of the client named in the request.
+
+        The caller is an authenticated admin, so the target client is taken
+        from the request body rather than from the credentials.
+        """
+        client = await client_crud.get_by_client_id(db, request.client_id)
+        if client is None:
+            raise ApplicationException(
+                message="Client not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
         new_token = generate_token()
         rotated_client = await client_crud.update_hashed_token(
             db,
-            client=current_client,
+            client=client,
             hashed_token=hash_token(new_token),
         )
 

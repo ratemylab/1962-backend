@@ -3,7 +3,10 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ClientDB
+from app.core.config import settings
+from app.core.security import hash_password
+from app.db.models import AdminDB, ClientDB
+from app.db.services.crud_admin import DuplicateAdminError, admin_crud
 from app.db.services.crud_client import ClientPlaintextCredential, client_crud
 
 
@@ -49,3 +52,25 @@ async def seed_clients(db: AsyncSession) -> list[ClientPlaintextCredential]:
             )
         )
     return created_credentials
+
+
+async def seed_admin(db: AsyncSession) -> AdminDB | None:
+    """Create the default admin account when it is not present yet.
+
+    Only the bcrypt hash of the configured password is persisted. Returns None
+    when the account already exists, including when a concurrently starting
+    replica created it first.
+    """
+    username = settings.seed_admin_username
+    result = await db.execute(select(AdminDB).where(AdminDB.username == username))
+    if result.scalar_one_or_none() is not None:
+        return None
+
+    try:
+        return await admin_crud.create_admin(
+            db,
+            username=username,
+            password_hash=hash_password(settings.seed_admin_password),
+        )
+    except DuplicateAdminError:
+        return None
